@@ -1,12 +1,14 @@
 import express from "express";
 import http from "http";
-import { Server as SocketServer } from "socket.io";
 import cors from "cors";
 import dotenv from "dotenv";
 import connectDB from "./config/db";
 import userRoutes from "./routes/userRoutes";
 import authRoutes from "./routes/authRoutes"; // 👈 Make sure to import this
 import cookieParser from "cookie-parser";
+import messageRoutes from "./routes/messageRoutes";
+import { Server } from "socket.io";
+import Message from "./models/messageModel";
 
 dotenv.config();
 connectDB();
@@ -17,13 +19,6 @@ const server = http.createServer(app);
 // 🔐 Use env for frontend origin
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
 
-const io = new SocketServer(server, {
-  cors: {
-    origin: FRONTEND_URL,
-    methods: ["GET", "POST"],
-    credentials: true,
-  },
-});
 
 // 🔧 Middleware
 app.use(
@@ -41,23 +36,37 @@ app.use("/api/status", (req, res) => {
 });
 app.use("/api/users", userRoutes);
 app.use("/api/auth", authRoutes); // 👈 Mount the auth routes
+app.use("/api/messages", messageRoutes);
+
 
 // 💬 Socket.io events
-io.on("connection", (socket) => {
-  console.log("⚡ User connected:", socket.id);
+const io = new Server(server, {
+  cors: {
+    origin: FRONTEND_URL, // Adjust to frontend URL
+    methods: ["GET", "POST"],
+    credentials: true,
+  }
+});
 
-  socket.on("join-chat", (roomId) => {
+io.on("connection", (socket) => {
+  console.log("⚡ User connected", socket.id);
+
+  socket.on("join chat", (roomId) => {
     socket.join(roomId);
+    console.log(`✅ Joined room: ${roomId}`);
   });
 
-  socket.on("send-message", (data) => {
-    io.to(data.chatId).emit("receive-message", data);
+  socket.on("new message", (message) => {
+    const roomId = message.chatId;
+    socket.to(roomId).emit("message received", message); // emits to all except sender
+    console.log("📩 New message emitted to room:", roomId);
   });
 
   socket.on("disconnect", () => {
-    console.log("🚫 User disconnected:", socket.id);
+    console.log("❌ User disconnected", socket.id);
   });
 });
+
 
 // 🚀 Start Server
 const PORT = process.env.PORT || 5000;
