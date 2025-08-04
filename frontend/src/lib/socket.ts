@@ -33,6 +33,12 @@ socket.on("connect_error", async (err) => {
     }
   }
 });
+export const updateSocketToken = (token: string) => {
+  socket.auth = { token };
+  if (!socket.connected) {
+    socket.connect();
+  }
+};
 
 socket.connect();
 

@@ -10,7 +10,7 @@ import { toast } from "../hooks/use-toast";
 
 const HomePage: React.FC = () => {
   const [selectedUser, setSelectedUser] = useState<IUser | null>(null);
-  const [currentUser, setCurrentUser] = useState<IUser | null>(null);
+  const [currentUser, getCurrentUser] = useState<IUser | null>(null);
   const [chatId, setChatId] = useState<string>("");
   const [messages, setMessages] = useState<IMessage[]>([]);
 
@@ -19,7 +19,7 @@ const HomePage: React.FC = () => {
     if (storedUser) {
       try {
         const parsedUser: IUser = JSON.parse(storedUser);
-        setCurrentUser(parsedUser);
+        getCurrentUser(parsedUser);
       } catch (error) {
         console.error("Failed to parse user from localStorage:", error);
         toast({ title: "Session error", variant: "destructive" });

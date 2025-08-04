@@ -3,12 +3,14 @@ import jwt from "jsonwebtoken";
 import { Request, Response, NextFunction } from "express";
 import User from "../models/User";
 import { IUser } from "../models/User";
+import { Multer } from 'multer';
 
 // Rely on server.ts to load .env
 const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET!; // Non-null assertion since validated in server.ts
 
 export interface AuthenticatedRequest extends Request {
   user?: IUser;
+  file?: Express.Multer.File;
 }
 
 export const protect = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {

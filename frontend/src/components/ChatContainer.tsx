@@ -1,11 +1,12 @@
-// src/components/ChatContainer.tsx
-import React, { useRef, useState, useEffect } from "react";
-import { FiSend, FiImage, FiSmile, FiInfo } from "react-icons/fi";
-import { FaUser } from "react-icons/fa";
-import type { IUser, IMessage } from "../types";
-import { sendMessageAPI } from "../api/message";
-import { socket } from "../lib/socket";
-import { toast } from "../hooks/use-toast";
+import React, { useRef, useState, useEffect, useCallback } from 'react';
+import { FiSend, FiImage, FiSmile, FiInfo } from 'react-icons/fi';
+import { FaUser } from 'react-icons/fa';
+import type { IUser, IMessage } from '../types';
+import { sendMessageAPI, getMessages } from '../api/message';
+import { socket, updateSocketToken } from '../lib/socket';
+import { toast } from '../hooks/use-toast';
+import { debounce } from 'lodash';
+import { v4 as uuidv4 } from 'uuid';
 
 interface Props {
   user: IUser;
@@ -24,65 +25,138 @@ const ChatContainer: React.FC<Props> = ({
   setMessages,
   onSendImage,
 }) => {
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState('');
+  const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
+  const [typing, setTyping] = useState<string | null>(null);
+  const [isSending, setIsSending] = useState(false); // Prevent multiple sends
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const DefaultAvatar = ({ size = "w-8 h-8" }: { size?: string }) => (
+  // Debounce handleTyping to emit typing event at most every 500ms
+  const handleTyping = useCallback(
+    debounce(() => {
+      socket.emit('typing', { chatId, userId: currentUser._id });
+    }, 500),
+    [chatId, currentUser._id]
+  );
+
+  const DefaultAvatar = ({ size = 'w-8 h-8' }: { size?: string }) => (
     <div className={`${size} bg-gray-600 rounded-full flex items-center justify-center`}>
       <FaUser className="text-gray-400 text-sm" />
     </div>
   );
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   useEffect(() => {
-    if (chatId) {
-      socket.emit("join chat", chatId);
+    if (chatId && currentUser._id) {
+      const token = localStorage.getItem('token');
+      if (token) {
+        updateSocketToken(token);
+        socket.connect();
+      } else {
+        toast({ title: 'Authentication required', variant: 'destructive' });
+        window.location.href = '/login';
+        return;
+      }
 
-      socket.on("message received", (newMsg: IMessage) => {
+      socket.emit('join chat', chatId);
+
+      socket.on('message received', (newMsg: IMessage) => {
         if (newMsg.chatId === chatId) {
-          setMessages((prev) => [...prev, newMsg]);
+          setMessages((prev) => {
+            // Deduplicate by checking if message _id already exists
+            if (prev.some((msg) => msg._id === newMsg._id)) {
+              return prev;
+            }
+            // Update optimistic message with server _id
+            return prev.map((msg) =>
+              msg.tempId === newMsg._id ? { ...newMsg, tempId: undefined } : msg
+            ).concat(newMsg.tempId ? [] : [newMsg]);
+          });
         }
       });
 
-      socket.on("connect_error", (err) => {
-        console.error("Socket.IO connect error:", err.message);
-        toast({ title: "Connection error", variant: "destructive" });
+      socket.on('onlineUsers', (users: string[]) => {
+        setOnlineUsers(users);
       });
 
+      socket.on('typing', (data: { userId: string }) => {
+        if (data.userId !== currentUser._id) {
+          setTyping(data.userId);
+          setTimeout(() => setTyping(null), 3000);
+        }
+      });
+
+      socket.on('connect_error', (err) => {
+        console.error('Socket.IO connect error:', err.message);
+        toast({ title: 'Connection error', variant: 'destructive' });
+      });
+
+      const fetchMessages = async () => {
+        try {
+          const messages = await getMessages(chatId);
+          setMessages(messages);
+        } catch (error: any) {
+          toast({ title: error.message || 'Failed to load messages', variant: 'destructive' });
+        }
+      };
+      fetchMessages();
+
       return () => {
-        socket.off("message received");
-        socket.off("connect_error");
+        socket.off('message received');
+        socket.off('onlineUsers');
+        socket.off('typing');
+        socket.off('connect_error');
+        socket.disconnect();
       };
     }
-  }, [chatId, setMessages]);
+  }, [chatId, currentUser._id, setMessages]);
 
   const handleSendMessage = async () => {
     if (!message.trim()) {
-      toast({ title: "Message cannot be empty", variant: "destructive" });
+      toast({ title: 'Message cannot be empty', variant: 'destructive' });
       return;
     }
-    if (!chatId || !currentUser?._id) {
-      toast({ title: "Chat or user not initialized", variant: "destructive" });
+    if (!chatId || !currentUser?._id || isSending) {
+      toast({ title: 'Chat, user, or sending in progress', variant: 'destructive' });
       return;
     }
 
+    setIsSending(true);
+    // Define optimisticMsg outside try-catch for scope
+    const tempId = uuidv4();
+    const optimisticMsg: IMessage = {
+      _id: tempId,
+      chatId,
+      senderId: currentUser._id,
+      text: message.trim(),
+      createdAt: new Date().toISOString(),
+      tempId, // Mark as temporary
+    };
+
     try {
+      // Optimistic update
+      setMessages((prev) => [...prev, optimisticMsg]);
+
       const newMsg = await sendMessageAPI({
         chatId,
         content: message.trim(),
         senderId: currentUser._id,
       });
 
-      setMessages((prev) => [...prev, newMsg]);
-      socket.emit("new message", newMsg);
-      setMessage("");
+      // Emit to other clients
+      socket.emit('new message', { ...newMsg, tempId });
+      setMessage('');
     } catch (err: any) {
-      console.error("Message send failed:", err);
-      toast({ title: err.response?.data?.message || "Failed to send message", variant: "destructive" });
+      console.error('Message send failed:', err);
+      // Remove optimistic message on failure
+      setMessages((prev) => prev.filter((msg) => msg._id !== tempId));
+      toast({ title: err.response?.data?.message || 'Failed to send message', variant: 'destructive' });
+    } finally {
+      setIsSending(false);
     }
   };
 
@@ -94,19 +168,19 @@ const ChatContainer: React.FC<Props> = ({
     const file = e.target.files?.[0];
     if (file) {
       if (!chatId || !currentUser?._id) {
-        toast({ title: "Chat or user not initialized", variant: "destructive" });
+        toast({ title: 'Chat or user not initialized', variant: 'destructive' });
         return;
       }
       onSendImage(file);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
   const formatTime = (timestamp: string) =>
-    new Date(timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   const isFromMe = (msg: IMessage) =>
-    typeof msg.senderId === "string"
+    typeof msg.senderId === 'string'
       ? msg.senderId === currentUser._id
       : msg.senderId._id === currentUser._id;
 
@@ -121,7 +195,9 @@ const ChatContainer: React.FC<Props> = ({
           )}
           <div>
             <h2 className="text-lg font-semibold">{user.name}</h2>
-            <p className="text-sm text-gray-400">Chat</p>
+            <p className="text-sm text-gray-400">
+              {onlineUsers.includes(user._id) ? 'Online' : 'Offline'}
+            </p>
           </div>
         </div>
         <FiInfo className="text-xl cursor-pointer hover:text-purple-400" />
@@ -149,7 +225,7 @@ const ChatContainer: React.FC<Props> = ({
             return (
               <div
                 key={msg._id}
-                className={`flex items-end gap-2 ${fromMe ? "justify-end" : "justify-start"}`}
+                className={`flex items-end gap-2 ${fromMe ? 'justify-end' : 'justify-start'}`}
               >
                 {!fromMe && !msg.imageUrl && (
                   user.avatar ? (
@@ -161,17 +237,17 @@ const ChatContainer: React.FC<Props> = ({
                 <div>
                   <div
                     className={`max-w-xs p-3 rounded-xl ${
-                      fromMe ? "bg-purple-600 ml-auto" : "bg-gray-700"
+                      fromMe ? 'bg-purple-600 ml-auto' : 'bg-gray-700'
                     }`}
                   >
                     {msg.imageUrl ? (
                       <img src={msg.imageUrl} alt="Shared" className="rounded-lg max-w-full" />
                     ) : (
-                      <p className="text-sm">{msg.text }</p>
+                      <p className="text-sm">{msg.text}</p>
                     )}
                   </div>
                   <p className="text-xs text-gray-400 mt-1 text-right">
-                    {formatTime(msg.createdAt)}
+                    {formatTime(msg.createdAt)} {typing === msg.senderId && !fromMe ? '(typing...)' : ''}
                   </p>
                 </div>
                 {fromMe && (
@@ -195,7 +271,8 @@ const ChatContainer: React.FC<Props> = ({
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
+            handleTyping();
+            if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
               handleSendMessage();
             }
@@ -216,7 +293,7 @@ const ChatContainer: React.FC<Props> = ({
         <button
           type="button"
           onClick={handleSendMessage}
-          disabled={!message.trim() || !chatId || !currentUser?._id}
+          disabled={!message.trim() || !chatId || !currentUser?._id || isSending}
           className="p-2 bg-purple-600 rounded-full hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <FiSend className="text-white text-xl" />

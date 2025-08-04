@@ -10,7 +10,7 @@ interface MessagePayload {
 }
 
 export const sendMessageAPI = async (payload: MessagePayload): Promise<IMessage> => {
-  const res = await API.post("/api/messages", {
+  const res = await API.post("/messages", {
     ...payload,
     text: payload.content, // Map content to text
   });

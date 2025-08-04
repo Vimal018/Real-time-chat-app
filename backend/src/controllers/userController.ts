@@ -34,7 +34,7 @@ export const updateUserProfile = async (req: AuthenticatedRequest, res: Response
     const updatedUser = await user.save();
 
     return res.status(200).json({
-      id: updatedUser._id,
+      _id: updatedUser._id,
       name: updatedUser.name,
       email: updatedUser.email,
       avatar: updatedUser.avatar,
@@ -53,7 +53,7 @@ export const getCurrentUser = async (req: AuthenticatedRequest, res: Response) =
     if (!user) return res.status(404).json({ message: "User not found" });
 
     return res.status(200).json({
-      id: user._id,
+      _id: user._id,
       name: user.name,
       email: user.email,
       avatar: user.avatar,

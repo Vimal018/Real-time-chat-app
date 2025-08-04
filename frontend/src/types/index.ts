@@ -24,5 +24,7 @@ export interface IMessage {
   text: string;
   imageUrl?: string;
   createdAt: string;
-  updatedAt: string;
+  updatedAt?: string;
+  tempId?: string;
+  
 }
