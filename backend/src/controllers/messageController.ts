@@ -47,7 +47,7 @@ export const uploadImage = async (req: AuthenticatedRequest, res: Response) => {
       _id: new mongoose.Types.ObjectId(),
       chatId,
       senderId,
-      text: result.secure_url,
+      text: 'Image',
       imageUrl: result.secure_url,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -56,8 +56,10 @@ export const uploadImage = async (req: AuthenticatedRequest, res: Response) => {
     const messageData = {
       ...message.toJSON(),
       senderId: message.senderId.toString(),
+      chatId: message.chatId.toString(),
     };
 
+    io.to(chatId).emit('message received', messageData);
     res.status(201).json(messageData);
   } catch (error) {
     console.error('Upload Image Error:', error);
@@ -92,8 +94,10 @@ export const sendMessage = async (req: AuthenticatedRequest, res: Response) => {
     const messageData = {
       ...message.toJSON(),
       senderId: message.senderId.toString(),
+      chatId: message.chatId.toString(),
     };
 
+    io.to(chatId).emit('message received', messageData);
     res.status(201).json(messageData);
   } catch (error) {
     console.error('Send Message Error:', error);
@@ -120,11 +124,28 @@ export const getMessages = async (req: AuthenticatedRequest, res: Response) => {
       messages.map((msg) => ({
         ...msg,
         senderId: msg.senderId.toString(),
-        text: msg.text,
+        chatId: msg.chatId.toString(),
       }))
     );
   } catch (error) {
     console.error('Get Messages Error:', error);
+    res.status(500).json({ message: 'Server error', error });
+  }
+};
+
+export const getUserChats = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?._id;
+    if (!userId) {
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+
+    const chats = await Chat.find({ userIds: userId })
+      .lean()
+      .exec();
+    res.json(chats);
+  } catch (error) {
+    console.error('Get User Chats Error:', error);
     res.status(500).json({ message: 'Server error', error });
   }
 };

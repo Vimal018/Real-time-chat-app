@@ -15,6 +15,7 @@ interface Props {
   messages: IMessage[];
   setMessages: React.Dispatch<React.SetStateAction<IMessage[]>>;
   onSendImage: (file: File) => void;
+  onUserClick: (user: IUser) => void;
 }
 
 const ChatContainer: React.FC<Props> = ({
@@ -24,15 +25,15 @@ const ChatContainer: React.FC<Props> = ({
   messages,
   setMessages,
   onSendImage,
+  onUserClick,
 }) => {
   const [message, setMessage] = useState('');
   const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
   const [typing, setTyping] = useState<string | null>(null);
-  const [isSending, setIsSending] = useState(false); // Prevent multiple sends
+  const [isSending, setIsSending] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Debounce handleTyping to emit typing event at most every 500ms
   const handleTyping = useCallback(
     debounce(() => {
       socket.emit('typing', { chatId, userId: currentUser._id });
@@ -67,11 +68,9 @@ const ChatContainer: React.FC<Props> = ({
       socket.on('message received', (newMsg: IMessage) => {
         if (newMsg.chatId === chatId) {
           setMessages((prev) => {
-            // Deduplicate by checking if message _id already exists
             if (prev.some((msg) => msg._id === newMsg._id)) {
               return prev;
             }
-            // Update optimistic message with server _id
             return prev.map((msg) =>
               msg.tempId === newMsg._id ? { ...newMsg, tempId: undefined } : msg
             ).concat(newMsg.tempId ? [] : [newMsg]);
@@ -126,7 +125,6 @@ const ChatContainer: React.FC<Props> = ({
     }
 
     setIsSending(true);
-    // Define optimisticMsg outside try-catch for scope
     const tempId = uuidv4();
     const optimisticMsg: IMessage = {
       _id: tempId,
@@ -134,25 +132,20 @@ const ChatContainer: React.FC<Props> = ({
       senderId: currentUser._id,
       text: message.trim(),
       createdAt: new Date().toISOString(),
-      tempId, // Mark as temporary
+      tempId,
     };
 
     try {
-      // Optimistic update
       setMessages((prev) => [...prev, optimisticMsg]);
-
       const newMsg = await sendMessageAPI({
         chatId,
         content: message.trim(),
         senderId: currentUser._id,
       });
-
-      // Emit to other clients
       socket.emit('new message', { ...newMsg, tempId });
       setMessage('');
     } catch (err: any) {
       console.error('Message send failed:', err);
-      // Remove optimistic message on failure
       setMessages((prev) => prev.filter((msg) => msg._id !== tempId));
       toast({ title: err.response?.data?.message || 'Failed to send message', variant: 'destructive' });
     } finally {
@@ -194,7 +187,12 @@ const ChatContainer: React.FC<Props> = ({
             <DefaultAvatar size="w-10 h-10" />
           )}
           <div>
-            <h2 className="text-lg font-semibold">{user.name}</h2>
+            <h2
+              className="text-lg font-semibold cursor-pointer hover:text-purple-400"
+              onClick={() => onUserClick(user)}
+            >
+              {user.name}
+            </h2>
             <p className="text-sm text-gray-400">
               {onlineUsers.includes(user._id) ? 'Online' : 'Offline'}
             </p>
