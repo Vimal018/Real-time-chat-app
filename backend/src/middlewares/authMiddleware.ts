@@ -8,7 +8,7 @@ import { Socket } from 'socket.io';
 const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET!; // Non-null assertion since validated in server.ts
 
 export interface AuthenticatedRequest extends Request {
-  user?: IUser;
+  user?: any;
   file?: Express.Multer.File; // Use Express.Multer.File instead of Multer
 }
 
