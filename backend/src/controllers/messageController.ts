@@ -11,9 +11,54 @@ import { Server } from 'socket.io';
 const unlinkAsync = promisify(fs.unlink);
 
 let io: Server;
+const onlineUsers = new Set<string>();
 
 export const initSocket = (socketIo: Server) => {
   io = socketIo;
+
+  io.on('connection', (socket) => {
+    let userId = socket.handshake.query.userId as string | undefined;
+    if (!userId && socket.handshake.auth.userId) {
+      userId = socket.handshake.auth.userId;
+    }
+    console.log('User connected:', { socketId: socket.id, userId: userId });
+
+    if (!userId) {
+      socket.emit('error', { message: 'User ID missing in connection' });
+      console.log('Missing userId for socket:', socket.id);
+      return;
+    }
+
+    onlineUsers.add(userId);
+    io.emit('onlineUsers', Array.from(onlineUsers));
+    console.log('Global online users:', Array.from(onlineUsers));
+
+    socket.on('join chat', (chatId: string) => {
+      if (!mongoose.isValidObjectId(chatId)) {
+        socket.emit('error', { message: 'Invalid chatId format' });
+        console.log('Invalid chatId:', chatId);
+        return;
+      }
+      socket.join(chatId);
+      console.log(`User ${userId} joined chat ${chatId}`);
+    });
+
+    socket.on('disconnect', () => {
+      console.log('User disconnected:', { socketId: socket.id, userId });
+      onlineUsers.delete(userId!);
+      io.emit('onlineUsers', Array.from(onlineUsers));
+      console.log('Global online users:', Array.from(onlineUsers));
+    });
+  });
+};
+
+export const getOnlineUsers = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    res.json({ onlineUsers: Array.from(onlineUsers) });
+  } catch (error) {
+    console.error('Get Online Users Error:', error);
+    res.status(500).json({ message: 'Server error', error });
+  }
 };
 
 export const uploadImage = async (req: AuthenticatedRequest, res: Response) => {

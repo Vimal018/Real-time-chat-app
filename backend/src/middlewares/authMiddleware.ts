@@ -4,6 +4,7 @@ import { Request, Response, NextFunction } from "express";
 import User from "../models/User";
 import { IUser } from "../models/User";
 import { Multer } from 'multer';
+import { Socket } from "socket.io";
 
 // Rely on server.ts to load .env
 const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET!; // Non-null assertion since validated in server.ts
@@ -39,4 +40,23 @@ export const protect = async (req: AuthenticatedRequest, res: Response, next: Ne
 
   return res.status(403).json({ message: "Token is invalid or expired" });
 }
+};
+
+
+export const socketAuthMiddleware = (socket: Socket, next: (err?: Error) => void) => {
+  const token = socket.handshake.auth.token;
+  if (!token) {
+    console.log('Socket auth error: No token provided');
+    return next(new Error('Authentication error: No token'));
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_ACCESS_SECRET) as { _id: string; name: string; email: string };
+    socket.handshake.auth.userId = decoded._id;
+    console.log('Socket auth success:', { userId: decoded._id });
+    next();
+  } catch (error) {
+    console.error('Socket Auth Error:', error);
+    next(new Error('Authentication error: Invalid token'));
+  }
 };

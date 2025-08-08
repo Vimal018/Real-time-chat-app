@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { FiSend, FiImage, FiSmile, FiInfo } from 'react-icons/fi';
 import { FaUser } from 'react-icons/fa';
 import type { IUser, IMessage } from '../types';
-import { sendMessageAPI, getMessages } from '../api/message';
+import { sendMessageAPI } from '../api/message';
 import { socket, updateSocketToken } from '../lib/socket';
 import { toast } from '../hooks/use-toast';
 import { debounce } from 'lodash';
@@ -15,7 +15,7 @@ interface Props {
   messages: IMessage[];
   setMessages: React.Dispatch<React.SetStateAction<IMessage[]>>;
   onSendImage: (file: File) => void;
-  onUserClick: (user: IUser) => void;
+  onUserClick: () => void;
 }
 
 const ChatContainer: React.FC<Props> = ({
@@ -55,7 +55,7 @@ const ChatContainer: React.FC<Props> = ({
     if (chatId && currentUser._id) {
       const token = localStorage.getItem('token');
       if (token) {
-        updateSocketToken(token);
+        updateSocketToken(token, currentUser._id);
         socket.connect();
       } else {
         toast({ title: 'Authentication required', variant: 'destructive' });
@@ -65,21 +65,20 @@ const ChatContainer: React.FC<Props> = ({
 
       socket.emit('join chat', chatId);
 
-      socket.on('message received', (newMsg: IMessage) => {
-        if (newMsg.chatId === chatId) {
-          setMessages((prev) => {
-            if (prev.some((msg) => msg._id === newMsg._id)) {
-              return prev;
-            }
-            return prev.map((msg) =>
-              msg.tempId === newMsg._id ? { ...newMsg, tempId: undefined } : msg
-            ).concat(newMsg.tempId ? [] : [newMsg]);
-          });
-        }
-      });
-
       socket.on('onlineUsers', (users: string[]) => {
         setOnlineUsers(users);
+        console.log(
+          'ChatContainer online users:',
+          users,
+          'Current chatId:',
+          chatId,
+          'Current user:',
+          currentUser._id,
+          'Chatting with user:',
+          user._id,
+          'Is user online:',
+          users.includes(user._id)
+        );
       });
 
       socket.on('typing', (data: { userId: string }) => {
@@ -94,25 +93,24 @@ const ChatContainer: React.FC<Props> = ({
         toast({ title: 'Connection error', variant: 'destructive' });
       });
 
-      const fetchMessages = async () => {
-        try {
-          const messages = await getMessages(chatId);
-          setMessages(messages);
-        } catch (error: any) {
-          toast({ title: error.message || 'Failed to load messages', variant: 'destructive' });
+      socket.on('new message', (newMsg: IMessage) => {
+        if (newMsg.chatId === chatId) {
+          setMessages((prev) =>
+            prev.some((msg) => msg.tempId === newMsg.tempId)
+              ? prev.map((msg) => (msg.tempId === newMsg.tempId ? { ...newMsg, _id: newMsg._id } : msg))
+              : [...prev, newMsg]
+          );
         }
-      };
-      fetchMessages();
+      });
 
       return () => {
-        socket.off('message received');
         socket.off('onlineUsers');
         socket.off('typing');
         socket.off('connect_error');
-        socket.disconnect();
+        socket.off('new message');
       };
     }
-  }, [chatId, currentUser._id, setMessages]);
+  }, [chatId, currentUser._id, user._id, setMessages]);
 
   const handleSendMessage = async () => {
     if (!message.trim()) {
@@ -189,12 +187,22 @@ const ChatContainer: React.FC<Props> = ({
           <div>
             <h2
               className="text-lg font-semibold cursor-pointer hover:text-purple-400"
-              onClick={() => onUserClick(user)}
+              onClick={onUserClick}
             >
               {user.name}
             </h2>
             <p className="text-sm text-gray-400">
-              {onlineUsers.includes(user._id) ? 'Online' : 'Offline'}
+              {onlineUsers.includes(user._id) ? (
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-green-400" />
+                  Online
+                </span>
+              ) : (
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-gray-400" />
+                  Offline
+                </span>
+              )}
             </p>
           </div>
         </div>

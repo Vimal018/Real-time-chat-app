@@ -3,8 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { BsThreeDotsVertical } from "react-icons/bs";
 import { FaUser, FaEdit, FaCheck, FaTimes, FaSignOutAlt } from "react-icons/fa";
 import API from "../lib/axios";
+import { socket } from "../lib/socket";
 import { toast } from "../hooks/use-toast";
-
 
 interface IUser {
   _id: string;
@@ -34,21 +34,30 @@ const Sidebar: React.FC<SidebarProps> = ({ onUserSelect, onResetUser }) => {
   });
   const [editForm, setEditForm] = useState({ name: "", avatar: "", bio: "" });
   const [userList, setUserList] = useState<IUser[]>([]);
+  const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
 
-  // ✅ Load current user and user list
   useEffect(() => {
     const fetchUser = async () => {
       try {
         const res = await API.get("http://localhost:5000/api/users/me");
         const user = res.data;
         localStorage.setItem("user", JSON.stringify(user));
+        localStorage.setItem("userId", user._id); // Store userId
         setCurrentUser({ ...user, status: "Online" });
         setEditForm({
           name: user.name || "",
           avatar: user.avatar || "",
           bio: user.bio || "",
         });
-      } catch {
+        socket.emit("join", user._id);
+      } catch (err: any) {
+        console.error("Fetch user error:", err);
+        if (err.response?.status === 401) {
+          localStorage.removeItem("token");
+          localStorage.removeItem("user");
+          localStorage.removeItem("userId");
+          navigate("/login");
+        }
         toast({ title: "Failed to load user", variant: "destructive" });
       }
     };
@@ -56,15 +65,54 @@ const Sidebar: React.FC<SidebarProps> = ({ onUserSelect, onResetUser }) => {
     const fetchUsers = async () => {
       try {
         const res = await API.get("http://localhost:5000/api/users");
-        setUserList(res.data); // Excludes current user if backend handles that
-      } catch {
+        setUserList(res.data);
+      } catch (err: any) {
+        console.error("Fetch users error:", err);
+        if (err.response?.status === 401) {
+          localStorage.removeItem("token");
+          localStorage.removeItem("user");
+          localStorage.removeItem("userId");
+          navigate("/login");
+        }
         toast({ title: "Failed to load users", variant: "destructive" });
+      }
+    };
+
+    const fetchOnlineUsers = async () => {
+      try {
+        const res = await API.get("http://localhost:5000/api/messages/online-users");
+        setOnlineUsers(res.data.onlineUsers);
+        console.log("Initial online users:", res.data.onlineUsers);
+      } catch (err: any) {
+        console.error("Fetch online users error:", {
+          message: err.message,
+          status: err.response?.status,
+          data: err.response?.data,
+        });
+        if (err.response?.status === 401) {
+          localStorage.removeItem("token");
+          localStorage.removeItem("user");
+          localStorage.removeItem("userId");
+          navigate("/login");
+        }
+        toast({ title: "Failed to load online users", variant: "destructive" });
       }
     };
 
     fetchUser();
     fetchUsers();
-  }, []);
+    fetchOnlineUsers();
+
+    // Handle Socket.IO onlineUsers event
+    socket.on("onlineUsers", (users: string[]) => {
+      setOnlineUsers(users);
+      console.log("Socket.IO online users:", users);
+    });
+
+    return () => {
+      socket.off("onlineUsers");
+    };
+  }, [navigate]);
 
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -85,11 +133,11 @@ const Sidebar: React.FC<SidebarProps> = ({ onUserSelect, onResetUser }) => {
         bio: editForm.bio,
       });
 
-      // 🔄 Refetch current user
       const res = await API.get("http://localhost:5000/api/users/me");
       const updatedUser = res.data;
 
       localStorage.setItem("user", JSON.stringify(updatedUser));
+      localStorage.setItem("userId", updatedUser._id);
       setCurrentUser({ ...updatedUser, status: "Online" });
       setEditForm({
         name: updatedUser.name || "",
@@ -100,8 +148,8 @@ const Sidebar: React.FC<SidebarProps> = ({ onUserSelect, onResetUser }) => {
       setShowEditProfile(false);
       setShowDropdown(false);
       toast({ title: "Profile updated!" });
-    } catch (err) {
-      console.error("Failed to update profile", err);
+    } catch (error) {
+      console.error("Failed to update profile", error);
       toast({ title: "Profile update failed", variant: "destructive" });
     }
   };
@@ -109,6 +157,8 @@ const Sidebar: React.FC<SidebarProps> = ({ onUserSelect, onResetUser }) => {
   const handleLogout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
+    localStorage.removeItem("userId");
+    socket.disconnect();
     navigate("/login");
   };
 
@@ -120,7 +170,6 @@ const Sidebar: React.FC<SidebarProps> = ({ onUserSelect, onResetUser }) => {
 
   return (
     <div className="w-[25%] border-r border-gray-700 p-4 text-white relative">
-      {/* Logo */}
       <div className="flex items-center justify-between mb-6">
         <div
           onClick={onResetUser}
@@ -130,7 +179,6 @@ const Sidebar: React.FC<SidebarProps> = ({ onUserSelect, onResetUser }) => {
           QuickChat
         </div>
 
-        {/* Profile dropdown */}
         <div className="flex items-center gap-2">
           {currentUser.avatar ? (
             <img
@@ -169,7 +217,6 @@ const Sidebar: React.FC<SidebarProps> = ({ onUserSelect, onResetUser }) => {
         </div>
       </div>
 
-      {/* Edit Profile Modal */}
       {showEditProfile && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-[#1f1e26] p-6 rounded-lg w-80 border border-gray-600">
@@ -226,36 +273,38 @@ const Sidebar: React.FC<SidebarProps> = ({ onUserSelect, onResetUser }) => {
         </div>
       )}
 
-           {/* Users */}
-                <div className="space-y-3">
-                {userList
-                .filter((user) => user._id !== currentUser._id)
-                .map((user) => (
-                  <div
-                    key={user._id}
-                    onClick={() => onUserSelect(user)}
-                    className="flex items-center gap-3 p-3 hover:bg-gray-800 rounded-lg cursor-pointer transition-colors"
-                  >
-                    {user.avatar ? (
-                      <img
-                        src={user.avatar}
-                        alt={user.name}
-                        className="w-10 h-10 rounded-full object-cover"
-                      />
-                    ) : (
-                      <DefaultAvatar size="w-10 h-10" />
-                    )}
+      <div className="space-y-3">
+        {userList
+          .filter((user) => user._id !== currentUser._id)
+          .map((user) => (
+            <div
+              key={user._id}
+              onClick={() => onUserSelect(user)}
+              className="flex items-center gap-3 p-3 hover:bg-gray-800 rounded-lg cursor-pointer transition-colors"
+            >
+              {user.avatar ? (
+                <img
+                  src={user.avatar}
+                  alt={user.name}
+                  className="w-10 h-10 rounded-full object-cover"
+                />
+              ) : (
+                <DefaultAvatar size="w-10 h-10" />
+              )}
 
-                    <div className="flex-1">
-                      <div className="font-medium text-white">{user.name}</div>
-                      <div className="text-sm text-gray-400">{user.bio}</div>
-                    </div>
+              <div className="flex-1">
+                <div className="font-medium text-white">{user.name}</div>
+                <div className="text-sm text-gray-400">{user.bio}</div>
+              </div>
 
-                    <div className="w-3 h-3 rounded-full bg-green-400" />
-                  </div>
-                ))}
+              <div
+                className={`w-3 h-3 rounded-full ${
+                  onlineUsers.includes(user._id) ? 'bg-green-400' : 'bg-gray-400'
+                }`}
+              />
             </div>
-
+          ))}
+      </div>
     </div>
   );
 };
