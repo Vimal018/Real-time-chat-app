@@ -1,15 +1,15 @@
-import express from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { getMessages, sendMessage, uploadImage, getOnlineUsers } from '../controllers/messageController';
-import { protect } from '../middlewares/authMiddleware';
+import { protect, AuthenticatedRequest } from '../middlewares/authMiddleware';
 import multer from 'multer';
 
-const router = express.Router();
+const router = Router();
 
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
+  destination: (req: Request, file: Express.Multer.File, cb: (error: Error | null, destination: string) => void) => {
     cb(null, 'uploads/');
   },
-  filename: (req, file, cb) => {
+  filename: (req: Request, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
     cb(null, `${Date.now()}-${file.originalname}`);
   },
 });
