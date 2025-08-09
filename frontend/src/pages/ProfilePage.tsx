@@ -1,4 +1,4 @@
-import React from "react";
+// frontend/src/pages/ProfilePage.tsx
 
 const ProfilePage = () => {
   return (
