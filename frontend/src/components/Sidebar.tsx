@@ -36,83 +36,80 @@ const Sidebar: React.FC<SidebarProps> = ({ onUserSelect, onResetUser }) => {
   const [userList, setUserList] = useState<IUser[]>([]);
   const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
 
-  useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const res = await API.get("http://localhost:5000/api/users/me");
-        const user = res.data;
-        localStorage.setItem("user", JSON.stringify(user));
-        localStorage.setItem("userId", user._id); // Store userId
-        setCurrentUser({ ...user, status: "Online" });
-        setEditForm({
-          name: user.name || "",
-          avatar: user.avatar || "",
-          bio: user.bio || "",
-        });
-        socket.emit("join", user._id);
-      } catch (err: any) {
-        console.error("Fetch user error:", err);
-        if (err.response?.status === 401) {
-          localStorage.removeItem("token");
-          localStorage.removeItem("user");
-          localStorage.removeItem("userId");
-          navigate("/login");
-        }
-        toast({ title: "Failed to load user", variant: "destructive" });
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL || "http://localhost:5000";
+
+useEffect(() => {
+  const fetchUser = async () => {
+    try {
+      const res = await API.get(`${API_BASE_URL}/api/users/me`);
+      const user = res.data;
+      localStorage.setItem("user", JSON.stringify(user));
+      localStorage.setItem("userId", user._id);
+      setCurrentUser({ ...user, status: "Online" });
+      setEditForm({
+        name: user.name || "",
+        avatar: user.avatar || "",
+        bio: user.bio || "",
+      });
+      socket.emit("join", user._id);
+    } catch (err: any) {
+      console.error("Fetch user error:", err);
+      if (err.response?.status === 401) {
+        localStorage.clear();
+        navigate("/login");
       }
-    };
+      toast({ title: "Failed to load user", variant: "destructive" });
+    }
+  };
 
-    const fetchUsers = async () => {
-      try {
-        const res = await API.get("http://localhost:5000/api/users");
-        setUserList(res.data);
-      } catch (err: any) {
-        console.error("Fetch users error:", err);
-        if (err.response?.status === 401) {
-          localStorage.removeItem("token");
-          localStorage.removeItem("user");
-          localStorage.removeItem("userId");
-          navigate("/login");
-        }
-        toast({ title: "Failed to load users", variant: "destructive" });
+  const fetchUsers = async () => {
+    try {
+      const res = await API.get(`${API_BASE_URL}/api/users`);
+      setUserList(res.data);
+    } catch (err: any) {
+      console.error("Fetch users error:", err);
+      if (err.response?.status === 401) {
+        localStorage.clear();
+        navigate("/login");
       }
-    };
+      toast({ title: "Failed to load users", variant: "destructive" });
+    }
+  };
 
-    const fetchOnlineUsers = async () => {
-      try {
-        const res = await API.get("http://localhost:5000/api/messages/online-users");
-        setOnlineUsers(res.data.onlineUsers);
-        console.log("Initial online users:", res.data.onlineUsers);
-      } catch (err: any) {
-        console.error("Fetch online users error:", {
-          message: err.message,
-          status: err.response?.status,
-          data: err.response?.data,
-        });
-        if (err.response?.status === 401) {
-          localStorage.removeItem("token");
-          localStorage.removeItem("user");
-          localStorage.removeItem("userId");
-          navigate("/login");
-        }
-        toast({ title: "Failed to load online users", variant: "destructive" });
+  const fetchOnlineUsers = async () => {
+    try {
+      const res = await API.get(`${API_BASE_URL}/api/messages/online-users`);
+      setOnlineUsers(res.data.onlineUsers);
+      console.log("Initial online users:", res.data.onlineUsers);
+    } catch (err: any) {
+      console.error("Fetch online users error:", {
+        message: err.message,
+        status: err.response?.status,
+        data: err.response?.data,
+      });
+      if (err.response?.status === 401) {
+        localStorage.clear();
+        navigate("/login");
       }
-    };
+      toast({ title: "Failed to load online users", variant: "destructive" });
+    }
+  };
 
-    fetchUser();
-    fetchUsers();
-    fetchOnlineUsers();
+  fetchUser();
+  fetchUsers();
+  fetchOnlineUsers();
 
-    // Handle Socket.IO onlineUsers event
-    socket.on("onlineUsers", (users: string[]) => {
-      setOnlineUsers(users);
-      console.log("Socket.IO online users:", users);
-    });
+  socket.on("onlineUsers", (users: string[]) => {
+    setOnlineUsers(users);
+    console.log("Socket.IO online users:", users);
+  });
 
-    return () => {
-      socket.off("onlineUsers");
-    };
-  }, [navigate]);
+  return () => {
+    socket.off("onlineUsers");
+  };
+}, [navigate]);
+
 
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -127,13 +124,13 @@ const Sidebar: React.FC<SidebarProps> = ({ onUserSelect, onResetUser }) => {
 
   const handleSaveProfile = async () => {
     try {
-      await API.put("http://localhost:5000/api/users/profile", {
+      await API.put(`${API_BASE_URL}/api/users/profile`, {
         name: editForm.name,
         avatar: editForm.avatar,
         bio: editForm.bio,
       });
 
-      const res = await API.get("http://localhost:5000/api/users/me");
+      const res = await API.get(`${API_BASE_URL}/api/users/me`);
       const updatedUser = res.data;
 
       localStorage.setItem("user", JSON.stringify(updatedUser));

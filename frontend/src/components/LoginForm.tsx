@@ -26,10 +26,13 @@ const LoginForm = ({ onSwitchToSignUp }: LoginFormProps) => {
   });
 
 // LoginForm.tsx
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL || "http://localhost:5000";
+
 const handleSubmit = async (e: React.FormEvent) => {
   e.preventDefault();
   try {
-    const res = await fetch("http://localhost:5000/api/auth/login", {
+    const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -51,15 +54,15 @@ const handleSubmit = async (e: React.FormEvent) => {
     localStorage.setItem("token", data.token);
 
     // Fetch user profile
-    const profileRes = await fetch("http://localhost:5000/api/users/me", {
+    const profileRes = await fetch(`${API_BASE_URL}/api/users/me`, {
       headers: {
         Authorization: `Bearer ${data.token}`,
         "Content-Type": "application/json",
       },
       credentials: "include",
     });
-    const fullUser = await profileRes.json();
 
+    const fullUser = await profileRes.json();
     if (!profileRes.ok) {
       throw new Error(fullUser.message || "Failed to fetch user profile");
     }
@@ -73,6 +76,7 @@ const handleSubmit = async (e: React.FormEvent) => {
     toast({ title: err.message, variant: "destructive" });
   }
 };
+
 
   return (
     <motion.div

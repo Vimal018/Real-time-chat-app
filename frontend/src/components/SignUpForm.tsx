@@ -26,11 +26,14 @@ const SignUpForm = ({ onSwitchToLogin }: SignUpFormProps) => {
     agreeToTerms: false,
   });
 
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL || "http://localhost:5000";
+
 const handleSubmit = async (e: React.FormEvent) => {
   e.preventDefault();
 
   try {
-    const res = await fetch("http://localhost:5000/api/auth/register", {
+    const res = await fetch(`${API_BASE_URL}/api/auth/register`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -45,16 +48,17 @@ const handleSubmit = async (e: React.FormEvent) => {
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || "Signup failed");
 
-    // Save token to localStorage
+    // Save token and user
     localStorage.setItem("token", data.token);
-      localStorage.setItem("user", JSON.stringify(data.user));
+    localStorage.setItem("user", JSON.stringify(data.user));
 
-       login(data.token, data.user); // 🔥 This updates context
-      toast({ title: "Account created successfully" });
-      navigate("/");
-    } catch (err: any) {
-      toast({ title: err.message, variant: "destructive" });
-    }
+    login(data.token, data.user); // updates context
+    toast({ title: "Account created successfully" });
+    navigate("/");
+  } catch (err: any) {
+    console.error("Signup error:", err.message);
+    toast({ title: err.message, variant: "destructive" });
+  }
 };
 
 
