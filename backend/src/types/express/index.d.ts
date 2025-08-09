@@ -1,4 +1,4 @@
-import { IUser } from "../../models/User"; // adjust this import path
+import { IUser } from "../../models/User";
 import { Request } from "express";
 
 declare global {
@@ -8,6 +8,10 @@ declare global {
     }
   }
 }
+
 export interface AuthenticatedRequest extends Request {
   user?: IUser;
+  body: any;
+  params: any;
+  headers: any;
 }
