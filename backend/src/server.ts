@@ -16,7 +16,11 @@ connectDB();
 
 const app = express();
 const server = http.createServer(app);
-const FRONTEND_URL = process.env.FRONTEND_URL || ["http://localhost:5173", "http://192.168.x.x:5173"];
+const FRONTEND_URL = [
+  "http://localhost:5173",
+  "http://192.168.x.x:5173",
+  "https://real-time-chat-app-kappa-orcin.vercel.app"
+];
 
 app.use(
   cors({
