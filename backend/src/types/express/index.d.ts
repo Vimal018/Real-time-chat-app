@@ -1,17 +1,12 @@
-import { IUser } from "../../models/User";
+// middlewares/authMiddleware.ts or types/index.d.ts
 import { Request } from "express";
+import { IUser } from "../models/User"; // adjust path
 
-declare global {
-  namespace Express {
-    interface Request {
-      user?: IUser;
-    }
-  }
-}
-
-export interface AuthenticatedRequest extends Request {
+export interface AuthenticatedRequest<
+  P = Record<string, any>,
+  ResBody = any,
+  ReqBody = any,
+  ReqQuery = any
+> extends Request<P, ResBody, ReqBody, ReqQuery> {
   user?: IUser;
-  body: any;
-  params: any;
-  headers: any;
 }
