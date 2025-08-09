@@ -1,5 +1,6 @@
 import { io } from "socket.io-client";
-import { jwtDecode } from "jwt-decode"; // Install: npm install jwt-decode
+import { jwtDecode } from "jwt-decode";
+
 
 // Retrieve token and userId
 const token = localStorage.getItem("token");
@@ -13,8 +14,9 @@ if (token && !userId) {
     console.error("Failed to decode token:", error);
   }
 }
+const SOCKET_URL = import.meta.env.VITE_API_URL;
 
-const socket = io("http://localhost:5000", {
+const socket = io(SOCKET_URL, {
   auth: {
     token,
     userId, // Include userId in auth
@@ -34,7 +36,7 @@ socket.on("connect_error", async (err) => {
   console.error("Socket.IO connect error:", err.message);
   if (err.message === "Authentication error: Invalid token" || err.message === "Authentication error: No token") {
     try {
-      const res = await fetch("http://localhost:5000/api/auth/refresh-token", {
+      const res = await fetch(`${SOCKET_URL}/api/auth/refresh-token`, {
         method: "POST",
         credentials: "include",
       });
