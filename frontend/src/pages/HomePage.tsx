@@ -39,7 +39,7 @@ const HomePage: React.FC = () => {
     if (currentUser) {
       const fetchUserChats = async () => {
         try {
-          const res = await API.get("/chats");
+          const res = await API.get("/api/chats");
           const chatIds = res.data.map((chat: any) => chat._id);
           setUserChatIds(chatIds);
           console.log("User chat IDs:", chatIds);
@@ -50,7 +50,7 @@ const HomePage: React.FC = () => {
           // Fetch messages for all chats to populate cache
           const newCache: { [chatId: string]: IMessage[] } = {};
           for (const id of chatIds) {
-            const messagesRes = await API.get(`/messages/${id}`);
+            const messagesRes = await API.get(`/api/messages/${id}`);
             newCache[id] = messagesRes.data;
           }
           setMessageCache(newCache);
@@ -109,7 +109,7 @@ const HomePage: React.FC = () => {
     if (selectedUser && currentUser) {
       const fetchOrCreateChat = async () => {
         try {
-          const res = await API.post("/chats", {
+          const res = await API.post("/api/chats", {
             userIds: [currentUser._id, selectedUser._id],
           });
           const newChatId = res.data._id;
@@ -130,7 +130,7 @@ const HomePage: React.FC = () => {
             setMessages(messageCache[newChatId]);
             console.log("Loaded messages from cache:", messageCache[newChatId]);
           } else {
-            const messagesRes = await API.get(`/messages/${newChatId}`);
+            const messagesRes = await API.get(`/api/messages/${newChatId}`);
             setMessages(messagesRes.data);
             setMessageCache((prev) => ({ ...prev, [newChatId]: messagesRes.data }));
             console.log("Fetched messages:", messagesRes.data);
@@ -180,7 +180,7 @@ const HomePage: React.FC = () => {
       formData.append("chatId", chatId);
       formData.append("senderId", currentUser._id);
 
-      const res = await API.post("/messages/image", formData);
+      const res = await API.post("/api/messages/image", formData);
       const newMessage = res.data;
       console.log("Server response message:", newMessage);
       socket.emit("new message", { ...newMessage, tempId });
