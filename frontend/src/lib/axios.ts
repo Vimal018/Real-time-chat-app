@@ -27,7 +27,7 @@ axios.interceptors.request.use(async (config) => {
   if (isExpired(token) && !isRefreshing) {
     isRefreshing = true;
     try {
-      const response = await axios.post("/auth/refresh-token");
+      const response = await axios.post("/api/auth/refresh-token");
       const newToken = response.data.token;
 
       if (typeof newToken === "string") {

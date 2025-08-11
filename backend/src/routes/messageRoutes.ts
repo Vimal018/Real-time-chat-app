@@ -1,5 +1,5 @@
-import { Router, Request, Response, NextFunction } from 'express';
-import { getMessages, sendMessage, uploadImage, getOnlineUsers } from '../controllers/messageController';
+import { Router, Request } from 'express';
+import { getMessages, sendMessage, uploadImage, getOnlineUsers, deleteMessage, editMessage, markAsRead } from '../controllers/messageController';
 import { protect, AuthenticatedRequest } from '../middlewares/authMiddleware';
 import multer from 'multer';
 
@@ -16,9 +16,11 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
+router.get('/online-users', protect, getOnlineUsers);
 router.post('/', protect, sendMessage);
 router.get('/:chatId', protect, getMessages);
 router.post('/image', protect, upload.single('file'), uploadImage);
-router.get('/online-users', protect, getOnlineUsers);
-
+router.delete('/:id', protect, deleteMessage); // New
+router.put('/:id', protect, editMessage); // New
+router.post('/mark-read/:chatId', protect, markAsRead);
 export default router;

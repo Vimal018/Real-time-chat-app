@@ -3,7 +3,7 @@ import axios from "../lib/axios"; // use your configured axios instance
 
 export const accessChatAPI = async (senderId: string, receiverId: string) => {
   try {
-    const response = await axios.post("/chats", {
+    const response = await axios.post("/api/chats", {
       senderId,
       receiverId,
     });
@@ -16,7 +16,7 @@ export const accessChatAPI = async (senderId: string, receiverId: string) => {
 
 export const fetchChatsAPI = async () => {
   try {
-    const response = await axios.get("/chats");
+    const response = await axios.get("/api/chats");
     return response.data;
   } catch (error) {
     console.error("Error fetching chats:", error);

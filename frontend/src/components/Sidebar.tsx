@@ -5,6 +5,8 @@ import { FaUser, FaEdit, FaCheck, FaTimes, FaSignOutAlt } from "react-icons/fa";
 import API from "../lib/axios";
 import { socket } from "../lib/socket";
 import { toast } from "../hooks/use-toast";
+import { getOnlineUsersAPI } from '../api/message';
+
 
 interface IUser {
   _id: string;
@@ -78,24 +80,15 @@ useEffect(() => {
   };
 
   const fetchOnlineUsers = async () => {
-    try {
-      const res = await API.get(`${API_BASE_URL}/api/messages/online-users`);
-      setOnlineUsers(res.data.onlineUsers);
-      console.log("Initial online users:", res.data.onlineUsers);
-    } catch (err: any) {
-      console.error("Fetch online users error:", {
-        message: err.message,
-        status: err.response?.status,
-        data: err.response?.data,
-      });
-      if (err.response?.status === 401) {
-        localStorage.clear();
-        navigate("/login");
+      try {
+        const onlineUsers = await getOnlineUsersAPI();
+        setOnlineUsers(onlineUsers);
+      } catch (err: any) {
+        console.error('Fetch online users error:', err.response?.data || err.message);
+        toast({ title: 'Failed to load online users', variant: 'destructive' });
       }
-      toast({ title: "Failed to load online users", variant: "destructive" });
-    }
-  };
-
+    };
+    
   fetchUser();
   fetchUsers();
   fetchOnlineUsers();

@@ -26,5 +26,7 @@ export interface IMessage {
   createdAt: string;
   updatedAt?: string;
   tempId?: string;
-  
+  isDeleted: boolean;
+  isEdited: boolean;
+  readBy: string[];
 }
