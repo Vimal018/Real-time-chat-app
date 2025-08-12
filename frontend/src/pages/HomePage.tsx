@@ -43,12 +43,19 @@ const HomePage: React.FC = () => {
           setUserChatIds(chatIds);
           console.log('User chat IDs:', chatIds);
 
+          // Only join chats, don't handle messages here
           chatIds.forEach((id: string) => socket.emit('join chat', id));
 
+          // Cache messages for quick switching
           const newCache: { [chatId: string]: IMessage[] } = {};
           for (const id of chatIds) {
-            const messagesRes = await API.get(`/api/messages/${id}`);
-            newCache[id] = messagesRes.data;
+            try {
+              const messagesRes = await API.get(`/api/messages/${id}`);
+              newCache[id] = messagesRes.data || [];
+            } catch (error) {
+              console.warn(`Failed to cache messages for chat ${id}:`, error);
+              newCache[id] = [];
+            }
           }
           setMessageCache(newCache);
           console.log('Initial message cache:', newCache);
@@ -60,139 +67,6 @@ const HomePage: React.FC = () => {
       fetchUserChats();
     }
   }, [currentUser]);
-
-  useEffect(() => {
-    socket.on('message received', (message: IMessage) => {
-      if (userChatIds.includes(message.chatId)) {
-        console.log('Received message:', message);
-        setMessageCache((prev) => {
-          const chatMessages = prev[message.chatId] || [];
-          if (chatMessages.some((msg) => msg._id === message._id)) {
-            console.log('Duplicate message filtered:', message._id);
-            return prev;
-          }
-          const updatedMessages = chatMessages
-            .map((msg) =>
-              msg.tempId === message._id ? { ...message, tempId: undefined } : msg
-            )
-            .concat(message.tempId ? [] : [message]);
-          const newCache = { ...prev, [message.chatId]: updatedMessages };
-          console.log('Updated message cache:', newCache);
-          return newCache;
-        });
-        if (message.chatId === chatId) {
-          setMessages((prev) => {
-            if (prev.some((msg) => msg._id === message._id)) {
-              return prev;
-            }
-            return prev
-              .map((msg) =>
-                msg.tempId === message._id ? { ...message, tempId: undefined } : msg
-              )
-              .concat(message.tempId ? [] : [message]);
-          });
-        }
-      }
-    });
-
-    socket.on('message deleted', (data: { messageId: string }) => {
-      setMessageCache((prev) => {
-        const newCache = { ...prev };
-        Object.keys(newCache).forEach((chatId) => {
-          newCache[chatId] = newCache[chatId].map((msg) =>
-            msg._id === data.messageId ? { ...msg, isDeleted: true } : msg
-          );
-        });
-        console.log('Updated message cache (delete):', newCache);
-        return newCache;
-      });
-      if (messages.some((msg) => msg._id === data.messageId)) {
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg._id === data.messageId ? { ...msg, isDeleted: true } : msg
-          )
-        );
-      }
-    });
-
-    socket.on('message edited', (newMessage: IMessage) => {
-      setMessageCache((prev) => {
-        const newCache = { ...prev };
-        if (newCache[newMessage.chatId]) {
-          newCache[newMessage.chatId] = newCache[newMessage.chatId].map((msg) =>
-            msg._id === newMessage._id
-              ? { ...newMessage, senderId: newMessage.senderId.toString() }
-              : msg
-          );
-        }
-        console.log('Updated message cache (edit):', newCache);
-        return newCache;
-      });
-      if (newMessage.chatId === chatId) {
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg._id === newMessage._id
-              ? { ...newMessage, senderId: newMessage.senderId.toString() }
-              : msg
-          )
-        );
-      }
-    });
-
-    socket.on('message delivered', (data: { messageId: string }) => {
-      setMessageCache((prev) => {
-        const newCache = { ...prev };
-        Object.keys(newCache).forEach((chatId) => {
-          newCache[chatId] = newCache[chatId].map((msg) =>
-            msg._id === data.messageId && !msg.readBy.includes(selectedUser?._id || '')
-              ? { ...msg, readBy: [...msg.readBy, selectedUser?._id || ''] }
-              : msg
-          );
-        });
-        return newCache;
-      });
-      if (messages.some((msg) => msg._id === data.messageId)) {
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg._id === data.messageId && !msg.readBy.includes(selectedUser?._id || '')
-              ? { ...msg, readBy: [...msg.readBy, selectedUser?._id || ''] }
-              : msg
-          )
-        );
-      }
-    });
-
-    socket.on('message read', (data: { messageId: string; readBy: string }) => {
-      setMessageCache((prev) => {
-        const newCache = { ...prev };
-        Object.keys(newCache).forEach((chatId) => {
-          newCache[chatId] = newCache[chatId].map((msg) =>
-            msg._id === data.messageId
-              ? { ...msg, readBy: [...msg.readBy, data.readBy] }
-              : msg
-          );
-        });
-        return newCache;
-      });
-      if (messages.some((msg) => msg._id === data.messageId)) {
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg._id === data.messageId
-              ? { ...msg, readBy: [...msg.readBy, data.readBy] }
-              : msg
-          )
-        );
-      }
-    });
-
-    return () => {
-      socket.off('message received');
-      socket.off('message deleted');
-      socket.off('message edited');
-      socket.off('message delivered');
-      socket.off('message read');
-    };
-  }, [chatId, userChatIds, selectedUser?._id]);
 
   useEffect(() => {
     if (selectedUser && currentUser) {
@@ -213,14 +87,16 @@ const HomePage: React.FC = () => {
             socket.emit('join chat', newChatId);
           }
 
+          // Load messages from cache or fetch
           if (messageCache[newChatId]) {
-            setMessages(messageCache[newChatId]);
+            setMessages([...messageCache[newChatId]]); // Create new array to avoid reference issues
             console.log('Loaded messages from cache:', messageCache[newChatId]);
           } else {
             const messagesRes = await API.get(`/api/messages/${newChatId}`);
-            setMessages(messagesRes.data);
-            setMessageCache((prev) => ({ ...prev, [newChatId]: messagesRes.data }));
-            console.log('Fetched messages:', messagesRes.data);
+            const fetchedMessages = messagesRes.data || [];
+            setMessages(fetchedMessages);
+            setMessageCache((prev) => ({ ...prev, [newChatId]: fetchedMessages }));
+            console.log('Fetched messages:', fetchedMessages);
           }
         } catch (error: any) {
           console.error('Failed to fetch or create chat:', error);
@@ -238,6 +114,14 @@ const HomePage: React.FC = () => {
     }
   }, [selectedUser, currentUser, userChatIds, messageCache]);
 
+  // Update cache when messages change (called from ChatContainer)
+  const updateMessageCache = (chatId: string, newMessages: IMessage[]) => {
+    setMessageCache(prev => ({
+      ...prev,
+      [chatId]: newMessages
+    }));
+  };
+
   const handleSendImage = async (file: File) => {
     if (!chatId || !currentUser?._id) {
       toast({ title: 'Chat or user not initialized', variant: 'destructive' });
@@ -246,7 +130,7 @@ const HomePage: React.FC = () => {
 
     const tempId = crypto.randomUUID();
     const optimisticMsg: IMessage = {
-      _id: tempId,
+      _id: `temp_${tempId}`, // Use consistent format with text messages
       chatId,
       senderId: currentUser._id,
       text: 'Uploading image...',
@@ -259,28 +143,33 @@ const HomePage: React.FC = () => {
     };
 
     try {
+      // Add optimistic message
       setMessages((prev) => [...prev, optimisticMsg]);
-      setMessageCache((prev) => ({
-        ...prev,
-        [chatId]: [...(prev[chatId] || []), optimisticMsg],
-      }));
-      console.log('Optimistic message added:', optimisticMsg);
+      console.log('Optimistic image message added:', optimisticMsg);
+      
       const formData = new FormData();
       formData.append('file', file);
       formData.append('chatId', chatId);
       formData.append('senderId', currentUser._id);
+      formData.append('tempId', tempId); // Add tempId to form data
 
       const res = await API.post('/api/messages/image', formData);
       const newMessage = res.data;
       console.log('Server response message:', newMessage);
-      socket.emit('new message', { ...newMessage, tempId });
+      
+      // Server will emit socket event, no need to emit here
+      // Replace optimistic message with real one immediately
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.tempId === tempId 
+            ? { ...newMessage, senderId: newMessage.senderId.toString() }
+            : msg
+        )
+      );
     } catch (error) {
       console.error('Error uploading image:', error);
-      setMessages((prev) => prev.filter((msg) => msg._id !== tempId));
-      setMessageCache((prev) => ({
-        ...prev,
-        [chatId]: (prev[chatId] || []).filter((msg) => msg._id !== tempId),
-      }));
+      // Remove optimistic message on error
+      setMessages((prev) => prev.filter((msg) => msg.tempId !== tempId));
       toast({ title: 'Failed to upload image', variant: 'destructive' });
     }
   };
@@ -290,22 +179,17 @@ const HomePage: React.FC = () => {
         .filter((msg) => {
           const senderId = typeof msg.senderId === 'string' ? msg.senderId : msg.senderId._id;
           const matches = senderId === selectedUser._id && msg.imageUrl && !msg.isDeleted;
-          console.log(
-            'Filter message:',
-            { _id: msg._id, senderId, imageUrl: msg.imageUrl, isDeleted: msg.isDeleted },
-            'SelectedUserId:',
-            selectedUser._id,
-            'Matches:',
-            matches
-          );
           return matches;
         })
         .map((msg) => msg.imageUrl!)
     : [];
-  console.log('mediaImages:', mediaImages, 'SelectedUser:', selectedUser?._id);
 
   if (!currentUser) {
-    return <div>Loading...</div>;
+    return (
+      <div className="h-screen w-full flex items-center justify-center bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900">
+        <div className="text-white text-xl">Loading...</div>
+      </div>
+    );
   }
 
   return (
@@ -333,6 +217,7 @@ const HomePage: React.FC = () => {
               onSendImage={handleSendImage}
               onUserClick={() => setShowRightSidebar((prev) => !prev)}
               showRightSidebar={showRightSidebar}
+              onMessagesUpdate={updateMessageCache} // Add cache update callback
             />
             {showRightSidebar && (
               <RightSidebar user={selectedUser} mediaImages={mediaImages} />

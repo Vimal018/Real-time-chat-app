@@ -20,6 +20,7 @@ interface Props {
   onSendImage: (file: File) => void;
   onUserClick: () => void;
   showRightSidebar?: boolean;
+  onMessagesUpdate?: (chatId: string, messages: IMessage[]) => void;
 }
 
 const ChatContainer: React.FC<Props> = ({
@@ -31,6 +32,7 @@ const ChatContainer: React.FC<Props> = ({
   onSendImage,
   onUserClick,
   showRightSidebar = false,
+  
 }) => {
   const [message, setMessage] = useState('');
   const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
@@ -117,6 +119,7 @@ const ChatContainer: React.FC<Props> = ({
       };
 
       fetchOnlineUsers();
+      const onlineUsersInterval = setInterval(fetchOnlineUsers, 10000);
       updateSocketToken(token, currentUser._id);
       socket.connect();
       socket.emit('join chat', chatId);
@@ -192,16 +195,27 @@ const ChatContainer: React.FC<Props> = ({
       });
 
       socket.on('new message', (newMsg: IMessage) => {
-        if (newMsg.chatId === chatId) {
-          setMessages((prev) =>
-            prev.some((msg) => msg.tempId === newMsg.tempId)
-              ? prev.map((msg) =>
-                  msg.tempId === newMsg.tempId ? { ...newMsg, _id: newMsg._id } : msg
-                )
-              : [...prev, newMsg]
-          );
-        }
-      });
+  if (newMsg.chatId === chatId) {
+    setMessages((prev) => {
+      // Check if we already have this message (by _id)
+      const existingIndex = prev.findIndex(msg => msg._id === newMsg._id);
+      if (existingIndex !== -1) {
+        return prev; // Already exists, don't add duplicate
+      }
+      
+      // Check if this replaces an optimistic message
+      const tempIndex = prev.findIndex(msg => msg.tempId === newMsg.tempId);
+      if (tempIndex !== -1) {
+        const newMessages = [...prev];
+        newMessages[tempIndex] = { ...newMsg, senderId: newMsg.senderId.toString() };
+        return newMessages;
+      }
+      
+      // New message from another user
+      return [...prev, { ...newMsg, senderId: newMsg.senderId.toString() }];
+    });
+  }
+});
 
       socket.on('connect', () => {
         console.log('Socket connected:', new Date().toISOString());
@@ -216,6 +230,7 @@ const ChatContainer: React.FC<Props> = ({
       });
 
       return () => {
+        clearInterval(onlineUsersInterval);
         socket.off('onlineUsers');
         socket.off('typing');
         socket.off('message deleted');
@@ -230,50 +245,62 @@ const ChatContainer: React.FC<Props> = ({
     }
   }, [chatId, currentUser._id, user._id, setMessages]);
 
-  const handleSendMessage = async () => {
-    if (!message.trim()) {
-      toast({ title: 'Message cannot be empty', variant: 'destructive' });
-      return;
-    }
-    if (!chatId || !currentUser?._id || isSending) {
-      toast({ title: 'Chat, user, or sending in progress', variant: 'destructive' });
-      return;
-    }
+const handleSendMessage = async () => {
+  if (!message.trim()) {
+    toast({ title: 'Message cannot be empty', variant: 'destructive' });
+    return;
+  }
+  if (!chatId || !currentUser?._id || isSending) {
+    toast({ title: 'Chat, user, or sending in progress', variant: 'destructive' });
+    return;
+  }
 
-    setIsSending(true);
-    const tempId = uuidv4();
-    const optimisticMsg: IMessage = {
-      _id: tempId,
-      chatId,
-      senderId: currentUser._id,
-      text: message.trim(),
-      createdAt: new Date().toISOString(),
-      isDeleted: false,
-      isEdited: false,
-      readBy: [currentUser._id],
-      tempId,
-    };
-
-    try {
-      setMessages((prev) => [...prev, optimisticMsg]);
-      const newMsg = await sendMessageAPI({
-        chatId,
-        content: message.trim(),
-        senderId: currentUser._id,
-      });
-      socket.emit('new message', { ...newMsg, tempId });
-      setMessage('');
-    } catch (err: any) {
-      console.error('Message send failed:', err);
-      setMessages((prev) => prev.filter((msg) => msg._id !== tempId));
-      toast({
-        title: err.response?.data?.message || 'Failed to send message',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsSending(false);
-    }
+  setIsSending(true);
+  const tempId = uuidv4();
+  const optimisticMsg: IMessage = {
+    _id: `temp_${tempId}`, // Changed from just tempId
+    chatId,
+    senderId: currentUser._id,
+    text: message.trim(),
+    createdAt: new Date().toISOString(),
+    isDeleted: false,
+    isEdited: false,
+    readBy: [currentUser._id],
+    tempId,
   };
+
+  try {
+    setMessages((prev) => [...prev, optimisticMsg]);
+    const newMsg = await sendMessageAPI({
+      chatId,
+      content: message.trim(),
+      senderId: currentUser._id,
+    });
+    
+    // Remove the socket.emit line if you have it
+    // socket.emit('new message', { ...newMsg, tempId }); // DELETE THIS LINE
+    
+    // Replace the optimistic message immediately
+    setMessages((prev) =>
+      prev.map((msg) =>
+        msg.tempId === tempId 
+          ? { ...newMsg, senderId: newMsg.senderId.toString() }
+          : msg
+      )
+    );
+    
+    setMessage('');
+  } catch (err: any) {
+    console.error('Message send failed:', err);
+    setMessages((prev) => prev.filter((msg) => msg.tempId !== tempId));
+    toast({
+      title: err.response?.data?.message || 'Failed to send message',
+      variant: 'destructive',
+    });
+  } finally {
+    setIsSending(false);
+  }
+};
 
   const handleEditMessage = async (messageId: string) => {
     if (!editedText.trim()) {
@@ -351,6 +378,13 @@ const ChatContainer: React.FC<Props> = ({
     setMessage((prev) => prev + emojiData.emoji);
   };
 
+  const dedupedMessages = messages.filter(
+  (msg, index, self) =>
+    index === self.findIndex(
+      m => m._id === msg._id || (m.tempId && m.tempId === msg.tempId)
+    )
+);
+
   return (
     <div className="flex flex-col flex-1 text-white">
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700 bg-black/40 backdrop-blur-sm">
@@ -405,8 +439,8 @@ const ChatContainer: React.FC<Props> = ({
             </div>
           </div>
         ) : (
-          messages.map((msg) => {
-            const fromMe = isFromMe(msg);
+          dedupedMessages.map((msg) => {
+          const fromMe = isFromMe(msg);
             if (msg.isDeleted) {
               return (
                 <div
