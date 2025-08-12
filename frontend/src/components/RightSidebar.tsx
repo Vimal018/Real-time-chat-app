@@ -11,8 +11,8 @@ interface RightSidebarProps {
 }
 
 const RightSidebar: React.FC<RightSidebarProps> = ({ user, mediaImages = [] }) => {
-  const [isOnline, setIsOnline] = useState(false); // Initialize as false, fetch actual status
-  const [selectedImage, setSelectedImage] = useState<string | null>(null); // For modal
+  const [isOnline, setIsOnline] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   const DefaultAvatar = ({ size = 'w-24 h-24' }: { size?: string }) => (
     <div className={`${size} bg-gray-600 rounded-full flex items-center justify-center mx-auto`}>
@@ -20,43 +20,47 @@ const RightSidebar: React.FC<RightSidebarProps> = ({ user, mediaImages = [] }) =
     </div>
   );
 
-  // Fetch initial online users and set up Socket.IO
-useEffect(() => {
-  if (!user?._id) return;
+  useEffect(() => {
+    if (!user?._id) return;
 
-  const fetchOnlineUsers = async () => {
-    try {
-      const onlineUsers = await getOnlineUsersAPI();
+    const fetchOnlineUsers = async () => {
+      try {
+        const onlineUsers = await getOnlineUsersAPI();
+        const online = onlineUsers.includes(user._id);
+        setIsOnline(online);
+        console.log(
+          `RightSidebar initial (Upstash Redis): User ${user._id} is ${online ? 'Online' : 'Offline'}`,
+          'Online users:', onlineUsers,
+          'Timestamp:', new Date().toISOString()
+        );
+      } catch (err: any) {
+        console.error('RightSidebar fetch online users error:', err.response?.data || err.message);
+        toast({ title: 'Failed to load online users', variant: 'destructive' });
+      }
+    };
+
+    fetchOnlineUsers();
+
+    const handleOnlineUsers = (onlineUsers: string[]) => {
       const online = onlineUsers.includes(user._id);
       setIsOnline(online);
-    } catch (err: any) {
-      console.error('RightSidebar fetch online users error:', err.message);
-      toast({ title: 'Failed to load online users', variant: 'destructive' });
-    }
-  };
+      console.log(
+        `RightSidebar (Redis Socket.IO): User ${user._id} is ${online ? 'Online' : 'Offline'}`,
+        'Online users:', onlineUsers,
+        'Timestamp:', new Date().toISOString()
+      );
+    };
 
-  // Fetch immediately when user changes
-  fetchOnlineUsers();
-
-  // Update socket listener for new user
-  const handleOnlineUsers = (onlineUsers: string[]) => {
-    const online = onlineUsers.includes(user._id);
-    setIsOnline(online);
-  };
-
-  socket.off('onlineUsers', handleOnlineUsers); // remove old listener if exists
-  socket.on('onlineUsers', handleOnlineUsers);
-
-  // Optional: Let server know this user is connected
-  socket.emit('join', user._id);
-
-  return () => {
     socket.off('onlineUsers', handleOnlineUsers);
-  };
-}, [user?._id]); // <-- run again whenever user changes
+    socket.on('onlineUsers', handleOnlineUsers);
 
+    socket.emit('join', user._id);
 
-  // Download image handler
+    return () => {
+      socket.off('onlineUsers', handleOnlineUsers);
+    };
+  }, [user?._id]);
+
   const handleDownload = (imageUrl: string) => {
     const link = document.createElement('a');
     link.href = imageUrl;
@@ -66,7 +70,6 @@ useEffect(() => {
     document.body.removeChild(link);
   };
 
-  // Open/close modal
   const handleImageClick = (src: string) => {
     setSelectedImage(src);
   };

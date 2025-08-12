@@ -11,7 +11,6 @@ import API from '../lib/axios';
 import EmojiPicker, { Theme } from 'emoji-picker-react';
 import type { EmojiClickData } from 'emoji-picker-react';
 
-
 interface Props {
   user: IUser;
   currentUser: IUser;
@@ -41,20 +40,19 @@ const ChatContainer: React.FC<Props> = ({
   const [editedText, setEditedText] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-const emojiPickerRef = useRef<HTMLDivElement>(null);
 
-// Close picker when clicking outside
-useEffect(() => {
-  const handleClickOutside = (e: MouseEvent) => {
-    if (emojiPickerRef.current && !emojiPickerRef.current.contains(e.target as Node)) {
-      setShowEmojiPicker(false);
-    }
-  };
-  document.addEventListener('mousedown', handleClickOutside);
-  return () => document.removeEventListener('mousedown', handleClickOutside);
-}, []);
+  // Close emoji picker when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(e.target as Node)) {
+        setShowEmojiPicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleTyping = useCallback(
     debounce(() => {
@@ -104,21 +102,16 @@ useEffect(() => {
           const users = await getOnlineUsersAPI();
           setOnlineUsers(users);
           console.log(
-            'ChatContainer initial online users:',
+            'ChatContainer initial (Upstash Redis):',
             users,
-            'Current chatId:',
-            chatId,
-            'Current user:',
-            currentUser._id,
-            'Chatting with user:',
-            user._id,
-            'Is user online:',
-            users.includes(user._id),
-            'Timestamp:',
-            new Date().toISOString()
+            'ChatId:', chatId,
+            'Current user:', currentUser._id,
+            'Chatting with:', user._id,
+            'Is user online:', users.includes(user._id),
+            'Timestamp:', new Date().toISOString()
           );
         } catch (err: any) {
-          console.error('Fetch online users error:', err.response?.data, err.message);
+          console.error('ChatContainer fetch error:', err.response?.data, err.message);
           toast({ title: 'Failed to load online users', variant: 'destructive' });
         }
       };
@@ -130,24 +123,19 @@ useEffect(() => {
 
       // Mark messages as read
       API.post(`/api/messages/mark-read/${chatId}`)
-        .then(() => console.log('Messages marked as read'))
+        .then(() => console.log('Messages marked as read', new Date().toISOString()))
         .catch((err) => console.error('Mark as read failed:', err));
 
       socket.on('onlineUsers', (users: string[]) => {
         setOnlineUsers(users);
         console.log(
-          'ChatContainer online users:',
+          'ChatContainer (Redis Socket.IO):',
           users,
-          'Current chatId:',
-          chatId,
-          'Current user:',
-          currentUser._id,
-          'Chatting with user:',
-          user._id,
-          'Is user online:',
-          users.includes(user._id),
-          'Timestamp:',
-          new Date().toISOString()
+          'ChatId:', chatId,
+          'Current user:', currentUser._id,
+          'Chatting with:', user._id,
+          'Is user online:', users.includes(user._id),
+          'Timestamp:', new Date().toISOString()
         );
       });
 
@@ -164,7 +152,7 @@ useEffect(() => {
             msg._id === data.messageId ? { ...msg, isDeleted: true } : msg
           )
         );
-        console.log('Message deleted:', data.messageId);
+        console.log('Message deleted:', data.messageId, new Date().toISOString());
       });
 
       socket.on('message edited', (newMessage: IMessage) => {
@@ -175,7 +163,7 @@ useEffect(() => {
               : msg
           )
         );
-        console.log('Message edited:', newMessage);
+        console.log('Message edited:', newMessage, new Date().toISOString());
       });
 
       socket.on('message delivered', (data: { messageId: string }) => {
@@ -216,13 +204,13 @@ useEffect(() => {
       });
 
       socket.on('connect', () => {
-        console.log('Socket reconnected');
+        console.log('Socket connected:', new Date().toISOString());
         socket.emit('join chat', chatId);
         socket.emit('getOnlineUsers');
       });
 
       socket.on('reconnect', () => {
-        console.log('Socket reconnected');
+        console.log('Socket reconnected:', new Date().toISOString());
         socket.emit('join chat', chatId);
         socket.emit('getOnlineUsers');
       });
@@ -359,11 +347,9 @@ useEffect(() => {
       ? msg.senderId === currentUser._id
       : msg.senderId._id === currentUser._id;
 
-
   const onEmojiClick = (emojiData: EmojiClickData) => {
-  setMessage((prev) => prev + emojiData.emoji);
-};
-
+    setMessage((prev) => prev + emojiData.emoji);
+  };
 
   return (
     <div className="flex flex-col flex-1 text-white">
@@ -486,7 +472,7 @@ useEffect(() => {
                     </div>
                   )}
                   <p className="text-xs text-gray-400 mt-1 text-right flex items-center gap-1">
-                     {formatTime(msg.isEdited ? msg.updatedAt ?? msg.createdAt ?? '' : msg.createdAt ?? '')}
+                    {formatTime(msg.isEdited ? msg.updatedAt ?? msg.createdAt ?? '' : msg.createdAt ?? '')}
                     {fromMe && getMessageStatus(msg)}
                     {typing === msg.senderId && !fromMe ? '(typing...)' : ''}
                   </p>
@@ -542,26 +528,24 @@ useEffect(() => {
         <div ref={messagesEndRef} />
       </div>
       <div className="flex items-center gap-3 px-4 py-3 border-t border-gray-700 bg-black/40 backdrop-blur-sm">
-        {/* <FiSmile className="text-2xl cursor-pointer hover:text-purple-400" /> */}
         <div className="relative">
-  <FiSmile
-    className="text-2xl cursor-pointer hover:text-purple-400"
-    onClick={() => setShowEmojiPicker((prev) => !prev)}
-  />
-  {showEmojiPicker && (
-    <div
-      ref={emojiPickerRef}
-      className="absolute bottom-12 left-0 z-50 bg-black rounded-lg shadow-lg"
-    >
-      <EmojiPicker
-        onEmojiClick={onEmojiClick}
-        theme={Theme.DARK}
-        lazyLoadEmojis
-      />
-    </div>
-  )}
-</div>
-
+          <FiSmile
+            className="text-2xl cursor-pointer hover:text-purple-400"
+            onClick={() => setShowEmojiPicker((prev) => !prev)}
+          />
+          {showEmojiPicker && (
+            <div
+              ref={emojiPickerRef}
+              className="absolute bottom-12 left-0 z-50 bg-black rounded-lg shadow-lg"
+            >
+              <EmojiPicker
+                onEmojiClick={onEmojiClick}
+                theme={Theme.DARK}
+                lazyLoadEmojis
+              />
+            </div>
+          )}
+        </div>
         <input
           type="text"
           placeholder="Type a message..."

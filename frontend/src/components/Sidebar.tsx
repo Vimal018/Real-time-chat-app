@@ -7,7 +7,6 @@ import { socket } from "../lib/socket";
 import { toast } from "../hooks/use-toast";
 import { getOnlineUsersAPI } from '../api/message';
 
-
 interface IUser {
   _id: string;
   name: string;
@@ -38,71 +37,91 @@ const Sidebar: React.FC<SidebarProps> = ({ onUserSelect, onResetUser }) => {
   const [userList, setUserList] = useState<IUser[]>([]);
   const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_URL || "http://localhost:5000";
+  const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
-useEffect(() => {
-  const fetchUser = async () => {
-    try {
-      const res = await API.get(`${API_BASE_URL}/api/users/me`);
-      const user = res.data;
-      localStorage.setItem("user", JSON.stringify(user));
-      localStorage.setItem("userId", user._id);
-      setCurrentUser({ ...user, status: "Online" });
-      setEditForm({
-        name: user.name || "",
-        avatar: user.avatar || "",
-        bio: user.bio || "",
-      });
-      socket.emit("join", user._id);
-    } catch (err: any) {
-      console.error("Fetch user error:", err);
-      if (err.response?.status === 401) {
-        localStorage.clear();
-        navigate("/login");
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const res = await API.get(`${API_BASE_URL}/api/users/me`);
+        const user = res.data;
+        localStorage.setItem("user", JSON.stringify(user));
+        localStorage.setItem("userId", user._id);
+        setCurrentUser({ ...user, status: "Online" });
+        setEditForm({
+          name: user.name || "",
+          avatar: user.avatar || "",
+          bio: user.bio || "",
+        });
+        socket.emit("join", user._id);
+        console.log(
+          'Sidebar fetch user (Upstash Redis):',
+          'UserId:', user._id,
+          'Name:', user.name,
+          'Timestamp:', new Date().toISOString()
+        );
+      } catch (err: any) {
+        console.error("Sidebar fetch user error:", err.response?.data || err.message);
+        if (err.response?.status === 401) {
+          localStorage.clear();
+          navigate("/login");
+        }
+        toast({ title: "Failed to load user", variant: "destructive" });
       }
-      toast({ title: "Failed to load user", variant: "destructive" });
-    }
-  };
+    };
 
-  const fetchUsers = async () => {
-    try {
-      const res = await API.get(`${API_BASE_URL}/api/users`);
-      setUserList(res.data);
-    } catch (err: any) {
-      console.error("Fetch users error:", err);
-      if (err.response?.status === 401) {
-        localStorage.clear();
-        navigate("/login");
+    const fetchUsers = async () => {
+      try {
+        const res = await API.get(`${API_BASE_URL}/api/users`);
+        setUserList(res.data);
+        console.log(
+          'Sidebar fetch users (Upstash Redis):',
+          'Users:', res.data.map((u: IUser) => ({ id: u._id, name: u.name })),
+          'Timestamp:', new Date().toISOString()
+        );
+      } catch (err: any) {
+        console.error("Sidebar fetch users error:", err.response?.data || err.message);
+        if (err.response?.status === 401) {
+          localStorage.clear();
+          navigate("/login");
+        }
+        toast({ title: "Failed to load users", variant: "destructive" });
       }
-      toast({ title: "Failed to load users", variant: "destructive" });
-    }
-  };
+    };
 
-  const fetchOnlineUsers = async () => {
+    const fetchOnlineUsers = async () => {
       try {
         const onlineUsers = await getOnlineUsersAPI();
         setOnlineUsers(onlineUsers);
+        console.log(
+          'Sidebar initial (Upstash Redis):',
+          onlineUsers,
+          'Current user:', currentUser._id,
+          'Timestamp:', new Date().toISOString()
+        );
       } catch (err: any) {
-        console.error('Fetch online users error:', err.response?.data || err.message);
+        console.error('Sidebar fetch online users error:', err.response?.data || err.message);
         toast({ title: 'Failed to load online users', variant: 'destructive' });
       }
     };
-    
-  fetchUser();
-  fetchUsers();
-  fetchOnlineUsers();
 
-  socket.on("onlineUsers", (users: string[]) => {
-    setOnlineUsers(users);
-    console.log("Socket.IO online users:", users);
-  });
+    fetchUser();
+    fetchUsers();
+    fetchOnlineUsers();
 
-  return () => {
-    socket.off("onlineUsers");
-  };
-}, [navigate]);
+    socket.on("onlineUsers", (users: string[]) => {
+      setOnlineUsers(users);
+      console.log(
+        'Sidebar (Redis Socket.IO):',
+        users,
+        'Current user:', currentUser._id,
+        'Timestamp:', new Date().toISOString()
+      );
+    });
 
+    return () => {
+      socket.off("onlineUsers");
+    };
+  }, [navigate, currentUser._id]);
 
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -139,7 +158,7 @@ useEffect(() => {
       setShowDropdown(false);
       toast({ title: "Profile updated!" });
     } catch (error) {
-      console.error("Failed to update profile", error);
+      console.error("Sidebar update profile error:", error);
       toast({ title: "Profile update failed", variant: "destructive" });
     }
   };

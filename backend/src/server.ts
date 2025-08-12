@@ -10,7 +10,7 @@ import messageRoutes from "./routes/messageRoutes";
 import chatRoutes from "./routes/chatRoutes";
 import { Server } from "socket.io";
 import { initSocket } from "./controllers/messageController";
-
+import "./config/redis";
 dotenv.config();
 connectDB();
 
